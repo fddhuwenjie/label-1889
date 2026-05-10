@@ -55,8 +55,16 @@ body {
   background-color: #f6ffed;
 }
 
+.exact-match-row {
+  background-color: #f6ffed;
+}
+
+.fuzzy-match-row {
+  background-color: #fff7e6;
+}
+
 .unmatched-row {
-  background-color: #fff2f0;
+  background-color: #f5f5f5;
 }
 
 /* 拖拽区域样式 */
