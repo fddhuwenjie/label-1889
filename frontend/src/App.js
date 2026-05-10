@@ -17,7 +17,7 @@ import ProcessingStatus from './components/ProcessingStatus';
 import HelpGuide from './components/HelpGuide';
 import logger from './utils/logger';
 import configManager from './utils/configManager';
-import { PROCESS_STATUS } from './constants';
+import { PROCESS_STATUS, createDefaultMatchRule } from './constants';
 import { CLEANING_OPERATIONS, FILL_NULLS_MODES } from './utils/dataCleaner';
 import DataCleaner from './utils/dataCleaner';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,6 +45,7 @@ function App() {
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [keyColumnA, setKeyColumnA] = useState('');
   const [keyColumnB, setKeyColumnB] = useState('');
+  const [matchRules, setMatchRules] = useState([]);
   const [resultData, setResultData] = useState(null);
   const [resultColumns, setResultColumns] = useState([]);
   const [stats, setStats] = useState(null);
@@ -222,7 +223,11 @@ function App() {
 
     setProcessing(true);
     setProcessStatus(PROCESS_STATUS.PROCESSING);
-    logger.info('开始处理数据', { sessionId: currentSessionId, resume });
+    logger.info('开始处理数据', { 
+      sessionId: currentSessionId, 
+      resume,
+      useMatchRules: matchRules && matchRules.length > 0 
+    });
 
     try {
       const result = await window.electronAPI.processData({
@@ -233,6 +238,7 @@ function App() {
         selectedColumns,
         sessionId: currentSessionId,
         resume,
+        matchRules,
       });
 
       if (result.success) {
@@ -499,9 +505,11 @@ function App() {
             keyColumnA={keyColumnA}
             keyColumnB={keyColumnB}
             selectedColumns={selectedColumns}
+            matchRules={matchRules}
             onKeyColumnAChange={setKeyColumnA}
             onKeyColumnBChange={setKeyColumnB}
             onSelectedColumnsChange={setSelectedColumns}
+            onMatchRulesChange={setMatchRules}
             onBack={() => setCurrentStep(1)}
             onNext={() => setCurrentStep(3)}
             canProceed={canProceedToStep4}

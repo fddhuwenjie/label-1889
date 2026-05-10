@@ -7,7 +7,7 @@
 //
 import { APP_CONFIG, PROCESS_STATUS, ANOMALY_CONFIG } from '../constants';
 import logger from './logger';
-import { buildKeyMap, matchRow, createStats, finalizeStats } from './matchCore';
+import { buildKeyMap, matchRow, createStats, finalizeStats, buildKeyMapsForRules, matchRowWithRules } from './matchCore';
 import _ from 'lodash';
 
 /**
@@ -189,13 +189,23 @@ export class DataProcessor {
 
   /**
    * 执行数据处理 (支持断点续处理)
+   * @param {Array} fileAData - 文件A数据
+   * @param {Array} fileBData - 文件B数据
+   * @param {string} keyColumnA - 文件A主键列名（传统模式）
+   * @param {string} keyColumnB - 文件B主键列名（传统模式）
+   * @param {Array} selectedColumns - 要补充的列
+   * @param {Object} options - 配置选项
+   * @param {Array} [options.matchRules] - 匹配规则链（新功能，优先级高于传统模式）
+   * @param {boolean} [options.resume=false] - 是否从断点恢复
+   * @param {number} [options.timeout] - 超时时间
+   * @returns {Promise<Object>} 处理结果
    */
   async process(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, options = {}) {
-    const { resume = false, timeout = APP_CONFIG.PROCESS_TIMEOUT } = options;
-    
+    const { resume = false, timeout = APP_CONFIG.PROCESS_TIMEOUT, matchRules = null } = options;
+
     this._updateStatus(PROCESS_STATUS.PROCESSING);
     this.abortController = new AbortController();
-    
+
     // 保存原始数据用于回滚
     this.originalData = {
       fileAData: [...fileAData],
@@ -204,8 +214,23 @@ export class DataProcessor {
 
     const stats = createStats(fileBData.length);
 
-    // 使用共享核心构建文件A的索引映射
-    const fileAMap = buildKeyMap(fileAData, keyColumnA);
+    // 根据是否有匹配规则链选择处理模式
+    let useMatchRules = false;
+    let fileAMap = null;
+    let fileAMaps = null;
+
+    if (matchRules && matchRules.length > 0) {
+      useMatchRules = true;
+      fileAMaps = buildKeyMapsForRules(fileAData, matchRules);
+      logger.info('使用匹配规则链模式', { 
+        ruleCount: matchRules.length,
+        sessionId: this.sessionId 
+      });
+    } else {
+      // 传统精确匹配模式（向后兼容）
+      fileAMap = buildKeyMap(fileAData, keyColumnA);
+      logger.info('使用传统精确匹配模式', { sessionId: this.sessionId });
+    }
 
     // 确定起始位置
     let startIndex = 0;
@@ -240,7 +265,20 @@ export class DataProcessor {
           break;
         }
 
-        const newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+        let newRow;
+        if (useMatchRules) {
+          newRow = matchRowWithRules(
+            fileBData[i],
+            i,
+            matchRules,
+            fileAMaps,
+            fileAData,
+            selectedColumns,
+            stats
+          );
+        } else {
+          newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+        }
 
         this.resultData.push(newRow);
         this.processedCount = i + 1;
@@ -266,10 +304,10 @@ export class DataProcessor {
         finalizeStats(stats);
         this._updateStatus(PROCESS_STATUS.COMPLETED);
         this.clearCheckpoint();
-        
-        logger.info('数据处理完成', { 
-          sessionId: this.sessionId, 
-          stats 
+
+        logger.info('数据处理完成', {
+          sessionId: this.sessionId,
+          stats
         });
       }
 
@@ -279,19 +317,20 @@ export class DataProcessor {
         stats,
         columns: [...new Set([...Object.keys(fileBData[0] || {}), ...selectedColumns])],
         isPaused: this.status === PROCESS_STATUS.PAUSED,
+        useMatchRules,
       };
 
     } catch (error) {
       clearTimeout(timeoutId);
       logger.error('数据处理失败', error, { sessionId: this.sessionId });
-      
+
       // 失败自动回滚到初始状态
       this.rollback();
       const autoRolledBack = true;
-      
+
       this._updateStatus(PROCESS_STATUS.ERROR);
       this._saveCheckpoint(); // 保存检查点以便恢复
-      
+
       return {
         success: false,
         message: error.message,

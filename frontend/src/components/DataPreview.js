@@ -15,6 +15,7 @@ import {
   CloseOutlined
 } from '@ant-design/icons';
 import { Resizable } from 'react-resizable';
+import { MATCH_RESULT_TYPE, MATCH_RESULT_COLORS } from '../constants';
 
 const { Title, Text } = Typography;
 
@@ -199,6 +200,19 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     }));
   }, [columns, selectedColumns, columnWidths, handleResize]);
 
+  // 获取匹配类型的显示信息
+  const getMatchTypeInfo = (matchType) => {
+    switch (matchType) {
+      case MATCH_RESULT_TYPE.EXACT:
+        return { label: '精确', color: 'success', icon: <CheckCircleOutlined /> };
+      case MATCH_RESULT_TYPE.FUZZY:
+        return { label: '模糊', color: 'warning', icon: <CheckCircleOutlined /> };
+      case MATCH_RESULT_TYPE.UNMATCHED:
+      default:
+        return { label: '未匹配', color: 'default', icon: <CloseCircleOutlined /> };
+    }
+  };
+
   // 添加行号和匹配状态列
   const allColumns = [
     {
@@ -211,18 +225,31 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     },
     {
       title: '匹配',
-      dataIndex: '_matched',
-      key: '_matched',
-      width: 80,
+      dataIndex: '_matchType',
+      key: '_matchType',
+      width: 100,
       fixed: 'left',
       filters: [
-        { text: '已匹配', value: true },
-        { text: '未匹配', value: false }
+        { text: '精确匹配', value: MATCH_RESULT_TYPE.EXACT },
+        { text: '模糊匹配', value: MATCH_RESULT_TYPE.FUZZY },
+        { text: '未匹配', value: MATCH_RESULT_TYPE.UNMATCHED }
       ],
-      onFilter: (value, record) => record._matched === value,
-      render: (matched) => matched 
-        ? <Tag color="success" icon={<CheckCircleOutlined />}>是</Tag>
-        : <Tag color="error" icon={<CloseCircleOutlined />}>否</Tag>
+      onFilter: (value, record) => record._matchType === value,
+      render: (matchType, record) => {
+        const info = getMatchTypeInfo(matchType);
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag color={info.color} icon={info.icon}>
+              {info.label}
+            </Tag>
+            {record._matchDistance !== null && record._matchDistance !== undefined && matchType !== MATCH_RESULT_TYPE.UNMATCHED && (
+              <Text type="secondary" style={{ fontSize: '10px' }}>
+                距离: {record._matchDistance}
+              </Text>
+            )}
+          </Space>
+        );
+      }
     },
     ...tableColumns
   ];
@@ -269,37 +296,48 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
 
       {/* 统计信息 */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col span={6}>
+        <Col span={4}>
           <Card className="stat-card info">
-            <Statistic 
+            <Statistic
               title={<span style={{ color: '#fff' }}>总行数</span>}
               value={stats?.totalRowsB || 0}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
-        <Col span={6}>
-          <Card className="stat-card success">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>匹配成功</span>}
-              value={stats?.matchedRows || 0}
-              suffix={`(${stats?.matchRate || 0}%)`}
+        <Col span={5}>
+          <Card className="stat-card" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.EXACT] }}>
+            <Statistic
+              title={<span style={{ color: '#fff' }}>精确匹配</span>}
+              value={stats?.exactMatchedRows || 0}
+              suffix={`(${stats?.exactMatchRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
-        <Col span={6}>
-          <Card className="stat-card warning">
-            <Statistic 
+        <Col span={5}>
+          <Card className="stat-card" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.FUZZY] }}>
+            <Statistic
+              title={<span style={{ color: '#fff' }}>模糊匹配</span>}
+              value={stats?.fuzzyMatchedRows || 0}
+              suffix={`(${stats?.fuzzyMatchRate || 0}%)`}
+              valueStyle={{ color: '#fff' }}
+            />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card className="stat-card" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.UNMATCHED] }}>
+            <Statistic
               title={<span style={{ color: '#fff' }}>未匹配</span>}
               value={stats?.unmatchedRows || 0}
+              suffix={`(${stats?.unmatchedRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={5}>
           <Card className="stat-card">
-            <Statistic 
+            <Statistic
               title={<span style={{ color: '#fff' }}>补充单元格</span>}
               value={stats?.filledCells || 0}
               valueStyle={{ color: '#fff' }}
@@ -367,13 +405,15 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
       </Card>
 
       {/* 数据表格 */}
-      <Card 
+      <Card
         title="数据预览"
         extra={
           <Space>
             <Text type="secondary">
-              <Tag color="blue">蓝色背景</Tag> 已补充数据
-              <Tag color="orange" style={{ marginLeft: '8px' }}>橙色</Tag> 空值
+              <Tag color="success" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.EXACT], color: '#fff' }}>绿色</Tag> 精确匹配
+              <Tag color="warning" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.FUZZY], color: '#fff', marginLeft: '8px' }}>橙色</Tag> 模糊匹配
+              <Tag color="default" style={{ background: MATCH_RESULT_COLORS[MATCH_RESULT_TYPE.UNMATCHED], color: '#fff', marginLeft: '8px' }}>灰色</Tag> 未匹配
+              <Tag color="blue" style={{ marginLeft: '8px' }}>蓝色背景</Tag> 已补充数据
             </Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               提示: 拖拽列边缘可调整列宽，拖拽表格底部边缘可调整高度，点击列头可排序（按住Shift多列排序）
@@ -404,7 +444,17 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
           onChange={handleTableChange}
           scroll={{ x: 'max-content', y: tableHeight }}
           size="small"
-          rowClassName={(record) => record._matched ? 'matched-row' : 'unmatched-row'}
+          rowClassName={(record) => {
+            switch (record._matchType) {
+              case MATCH_RESULT_TYPE.EXACT:
+                return 'exact-match-row';
+              case MATCH_RESULT_TYPE.FUZZY:
+                return 'fuzzy-match-row';
+              case MATCH_RESULT_TYPE.UNMATCHED:
+              default:
+                return 'unmatched-row';
+            }
+          }}
         />
         {/* 拖拽调整表格高度的手柄 */}
         <div

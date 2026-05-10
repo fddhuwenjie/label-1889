@@ -64,3 +64,70 @@ export const ANOMALY_CONFIG = {
   // 数据类型不一致警告
   TYPE_MISMATCH_WARNING: true,
 };
+
+// 匹配策略枚举
+export const MATCH_STRATEGY = {
+  EXACT: 'exact',
+  IGNORE_CASE: 'ignoreCase',
+  IGNORE_SPACE_PUNCT: 'ignoreSpacePunct',
+  LEVENSHTEIN: 'levenshtein',
+};
+
+// 匹配结果类型
+export const MATCH_RESULT_TYPE = {
+  EXACT: 'exact',
+  FUZZY: 'fuzzy',
+  UNMATCHED: 'unmatched',
+};
+
+// 匹配结果颜色配置
+export const MATCH_RESULT_COLORS = {
+  [MATCH_RESULT_TYPE.EXACT]: '#52c41a',
+  [MATCH_RESULT_TYPE.FUZZY]: '#fa8c16',
+  [MATCH_RESULT_TYPE.UNMATCHED]: '#bfbfbf',
+};
+
+// Levenshtein 编辑距离配置
+export const LEVENSHTEIN_CONFIG = {
+  MIN_THRESHOLD: 1,
+  MAX_THRESHOLD: 3,
+  DEFAULT_THRESHOLD: 2,
+};
+
+// 匹配策略优先级（执行顺序）
+export const MATCH_STRATEGY_PRIORITY = [
+  MATCH_STRATEGY.IGNORE_CASE,
+  MATCH_STRATEGY.IGNORE_SPACE_PUNCT,
+  MATCH_STRATEGY.LEVENSHTEIN,
+];
+
+// 默认匹配策略配置
+export const DEFAULT_MATCH_STRATEGIES = {
+  [MATCH_STRATEGY.IGNORE_CASE]: true,
+  [MATCH_STRATEGY.IGNORE_SPACE_PUNCT]: true,
+  [MATCH_STRATEGY.LEVENSHTEIN]: true,
+};
+
+// 匹配规则 schema
+export const MATCH_RULE_SCHEMA = {
+  id: 'string',
+  keyColumnA: 'string',
+  keyColumnB: 'string',
+  strategies: {
+    [MATCH_STRATEGY.IGNORE_CASE]: 'boolean',
+    [MATCH_STRATEGY.IGNORE_SPACE_PUNCT]: 'boolean',
+    [MATCH_STRATEGY.LEVENSHTEIN]: 'boolean',
+  },
+  levenshteinThreshold: 'number',
+  enabled: 'boolean',
+};
+
+// 创建默认匹配规则
+export const createDefaultMatchRule = (id, keyColumnA = '', keyColumnB = '') => ({
+  id,
+  keyColumnA,
+  keyColumnB,
+  strategies: { ...DEFAULT_MATCH_STRATEGIES },
+  levenshteinThreshold: LEVENSHTEIN_CONFIG.DEFAULT_THRESHOLD,
+  enabled: true,
+});

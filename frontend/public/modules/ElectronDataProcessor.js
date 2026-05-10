@@ -7,7 +7,14 @@ const csvParser = require('csv-parser');
 const { createReadStream } = require('fs');
 const ProgressBar = require('progress');
 const _ = require('lodash');
-const { buildKeyMap, matchRow, createStats, finalizeStats } = require('./matchCore');
+const { 
+  buildKeyMap, 
+  matchRow, 
+  createStats, 
+  finalizeStats,
+  buildKeyMapsForRules,
+  matchRowWithRules
+} = require('./matchCore');
 
 const DATA_LIMITS = {
   MAX_ROWS: 100000,
@@ -191,7 +198,8 @@ class ElectronDataProcessor {
   async process(params, onProgress) {
     const { 
       fileAPath, fileBPath, keyColumnA, keyColumnB, 
-      selectedColumns, sessionId, resume = false 
+      selectedColumns, sessionId, resume = false,
+      matchRules = null
     } = params;
 
     this.currentSession = sessionId;
@@ -222,7 +230,8 @@ class ElectronDataProcessor {
         selectedColumns,
         fileA.columns,
         checkpoint,
-        onProgress
+        onProgress,
+        matchRules
       );
 
       // 如果是暂停导致的中断，保存检查点并返回
@@ -287,11 +296,31 @@ class ElectronDataProcessor {
   }
 
   // ============ 数据匹配核心（使用共享 matchCore） ============
-  async matchData(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, fileAColumns, checkpoint, onProgress) {
+  async matchData(
+    fileAData, 
+    fileBData, 
+    keyColumnA, 
+    keyColumnB, 
+    selectedColumns, 
+    fileAColumns, 
+    checkpoint, 
+    onProgress,
+    matchRules = null
+  ) {
     const stats = createStats(fileBData.length);
 
-    // 使用共享核心构建文件A索引映射
-    const fileAMap = buildKeyMap(fileAData, keyColumnA);
+    let useMatchRules = false;
+    let fileAMap = null;
+    let fileAMaps = null;
+
+    if (matchRules && matchRules.length > 0) {
+      useMatchRules = true;
+      fileAMaps = buildKeyMapsForRules(fileAData, matchRules);
+      this.logger.info('使用匹配规则链模式', { ruleCount: matchRules.length });
+    } else {
+      fileAMap = buildKeyMap(fileAData, keyColumnA);
+      this.logger.info('使用传统精确匹配模式');
+    }
 
     let startIndex = 0;
     let resultData = [];
@@ -301,6 +330,8 @@ class ElectronDataProcessor {
       resultData = checkpoint.resultData;
       Object.assign(stats, {
         matchedRows: checkpoint.stats?.matchedRows || 0,
+        exactMatchedRows: checkpoint.stats?.exactMatchedRows || 0,
+        fuzzyMatchedRows: checkpoint.stats?.fuzzyMatchedRows || 0,
         unmatchedRows: checkpoint.stats?.unmatchedRows || 0,
         filledCells: checkpoint.stats?.filledCells || 0,
         nullCells: checkpoint.stats?.nullCells || 0,
@@ -327,8 +358,20 @@ class ElectronDataProcessor {
         throw new Error('处理超时，请尝试断点续处理');
       }
 
-      // 使用共享核心匹配单行
-      const newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+      let newRow;
+      if (useMatchRules) {
+        newRow = matchRowWithRules(
+          fileBData[i],
+          i,
+          matchRules,
+          fileAMaps,
+          fileAData,
+          selectedColumns,
+          stats
+        );
+      } else {
+        newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+      }
       resultData.push(newRow);
 
       if ((i + 1) % progressInterval === 0 || i === fileBData.length - 1) {
@@ -353,7 +396,7 @@ class ElectronDataProcessor {
     }
 
     finalizeStats(stats);
-    return { resultData, stats };
+    return { resultData, stats, useMatchRules };
   }
 
   // ============ 暂停（不抛错，优雅中断） ============
