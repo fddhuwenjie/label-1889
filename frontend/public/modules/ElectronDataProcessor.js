@@ -7,7 +7,7 @@ const csvParser = require('csv-parser');
 const { createReadStream } = require('fs');
 const ProgressBar = require('progress');
 const _ = require('lodash');
-const { buildKeyMap, matchRow, createStats, finalizeStats } = require('./matchCore');
+const { buildKeyMap, buildCandidateList, matchRow, matchRowWithRule, matchRowWithRuleChain, createStats, finalizeStats, MATCH_TYPE } = require('./matchCore');
 
 const DATA_LIMITS = {
   MAX_ROWS: 100000,
@@ -191,7 +191,8 @@ class ElectronDataProcessor {
   async process(params, onProgress) {
     const { 
       fileAPath, fileBPath, keyColumnA, keyColumnB, 
-      selectedColumns, sessionId, resume = false 
+      selectedColumns, sessionId, resume = false,
+      matchRules = null
     } = params;
 
     this.currentSession = sessionId;
@@ -222,7 +223,8 @@ class ElectronDataProcessor {
         selectedColumns,
         fileA.columns,
         checkpoint,
-        onProgress
+        onProgress,
+        matchRules
       );
 
       // 如果是暂停导致的中断，保存检查点并返回
@@ -287,11 +289,30 @@ class ElectronDataProcessor {
   }
 
   // ============ 数据匹配核心（使用共享 matchCore） ============
-  async matchData(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, fileAColumns, checkpoint, onProgress) {
+  async matchData(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, fileAColumns, checkpoint, onProgress, matchRules = null) {
     const stats = createStats(fileBData.length);
 
-    // 使用共享核心构建文件A索引映射
-    const fileAMap = buildKeyMap(fileAData, keyColumnA);
+    let ruleContexts = null;
+
+    if (matchRules && matchRules.length > 0) {
+      ruleContexts = matchRules.map(rule => ({
+        fileAMap: buildKeyMap(fileAData, rule.keyColumnA || keyColumnA),
+        candidates: buildCandidateList(fileAData, rule.keyColumnA || keyColumnA),
+        rule,
+      }));
+    } else {
+      const fileAMap = buildKeyMap(fileAData, keyColumnA);
+      const candidates = buildCandidateList(fileAData, keyColumnA);
+      ruleContexts = [{
+        fileAMap,
+        candidates,
+        rule: {
+          keyColumnA,
+          keyColumnB,
+          fuzzyConfig: { ignoreCase: false, ignoreSpacePunctuation: false, levenshtein: false, levenshteinThreshold: 1 },
+        },
+      }];
+    }
 
     let startIndex = 0;
     let resultData = [];
@@ -327,8 +348,7 @@ class ElectronDataProcessor {
         throw new Error('处理超时，请尝试断点续处理');
       }
 
-      // 使用共享核心匹配单行
-      const newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+      const newRow = matchRowWithRuleChain(fileBData[i], i, ruleContexts, selectedColumns, stats);
       resultData.push(newRow);
 
       if ((i + 1) % progressInterval === 0 || i === fileBData.length - 1) {

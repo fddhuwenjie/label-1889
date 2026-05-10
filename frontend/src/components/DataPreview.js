@@ -12,9 +12,11 @@ import {
   CloseCircleOutlined,
   FileExcelOutlined,
   SearchOutlined,
-  CloseOutlined
+  CloseOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 import { Resizable } from 'react-resizable';
+import { MATCH_TYPE, MATCH_TYPE_CONFIG } from '../constants';
 
 const { Title, Text } = Typography;
 
@@ -211,18 +213,27 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     },
     {
       title: '匹配',
-      dataIndex: '_matched',
-      key: '_matched',
-      width: 80,
+      dataIndex: '_matchType',
+      key: '_matchType',
+      width: 90,
       fixed: 'left',
       filters: [
-        { text: '已匹配', value: true },
-        { text: '未匹配', value: false }
+        { text: '精确匹配', value: MATCH_TYPE.EXACT },
+        { text: '模糊匹配', value: MATCH_TYPE.FUZZY },
+        { text: '未匹配', value: MATCH_TYPE.NONE },
       ],
-      onFilter: (value, record) => record._matched === value,
-      render: (matched) => matched 
-        ? <Tag color="success" icon={<CheckCircleOutlined />}>是</Tag>
-        : <Tag color="error" icon={<CloseCircleOutlined />}>否</Tag>
+      onFilter: (value, record) => (record._matchType || (record._matched ? MATCH_TYPE.EXACT : MATCH_TYPE.NONE)) === value,
+      render: (matchType, record) => {
+        const resolvedType = matchType || (record._matched ? MATCH_TYPE.EXACT : MATCH_TYPE.NONE);
+        const config = MATCH_TYPE_CONFIG[resolvedType] || MATCH_TYPE_CONFIG[MATCH_TYPE.NONE];
+        if (resolvedType === MATCH_TYPE.EXACT) {
+          return <Tag color="success" icon={<CheckCircleOutlined />}>{config.label}</Tag>;
+        } else if (resolvedType === MATCH_TYPE.FUZZY) {
+          return <Tag color="warning" icon={<QuestionCircleOutlined />}>{config.label}</Tag>;
+        } else {
+          return <Tag color="default" icon={<CloseCircleOutlined />}>{config.label}</Tag>;
+        }
+      }
     },
     ...tableColumns
   ];
@@ -269,7 +280,7 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
 
       {/* 统计信息 */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col span={6}>
+        <Col span={4}>
           <Card className="stat-card info">
             <Statistic 
               title={<span style={{ color: '#fff' }}>总行数</span>}
@@ -278,26 +289,37 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={5}>
           <Card className="stat-card success">
             <Statistic 
-              title={<span style={{ color: '#fff' }}>匹配成功</span>}
-              value={stats?.matchedRows || 0}
-              suffix={`(${stats?.matchRate || 0}%)`}
+              title={<span style={{ color: '#fff' }}>精确匹配</span>}
+              value={stats?.exactMatchedRows || 0}
+              suffix={`(${stats?.exactMatchRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
-        <Col span={6}>
-          <Card className="stat-card warning">
+        <Col span={5}>
+          <Card className="stat-card fuzzy">
+            <Statistic 
+              title={<span style={{ color: '#fff' }}>模糊匹配</span>}
+              value={stats?.fuzzyMatchedRows || 0}
+              suffix={`(${stats?.fuzzyMatchRate || 0}%)`}
+              valueStyle={{ color: '#fff' }}
+            />
+          </Card>
+        </Col>
+        <Col span={5}>
+          <Card className="stat-card unmatched">
             <Statistic 
               title={<span style={{ color: '#fff' }}>未匹配</span>}
               value={stats?.unmatchedRows || 0}
+              suffix={`(${stats?.unmatchedRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col span={5}>
           <Card className="stat-card">
             <Statistic 
               title={<span style={{ color: '#fff' }}>补充单元格</span>}
@@ -372,8 +394,10 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
         extra={
           <Space>
             <Text type="secondary">
-              <Tag color="blue">蓝色背景</Tag> 已补充数据
-              <Tag color="orange" style={{ marginLeft: '8px' }}>橙色</Tag> 空值
+              <Tag color="success">绿色</Tag> 精确匹配
+              <Tag color="warning" style={{ marginLeft: '8px' }}>橙色</Tag> 模糊匹配
+              <Tag color="default" style={{ marginLeft: '8px' }}>灰色</Tag> 未匹配
+              <Tag color="blue" style={{ marginLeft: '8px' }}>蓝色背景</Tag> 已补充数据
             </Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               提示: 拖拽列边缘可调整列宽，拖拽表格底部边缘可调整高度，点击列头可排序（按住Shift多列排序）
@@ -404,7 +428,11 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
           onChange={handleTableChange}
           scroll={{ x: 'max-content', y: tableHeight }}
           size="small"
-          rowClassName={(record) => record._matched ? 'matched-row' : 'unmatched-row'}
+          rowClassName={(record) => {
+            const matchType = record._matchType || (record._matched ? MATCH_TYPE.EXACT : MATCH_TYPE.NONE);
+            const config = MATCH_TYPE_CONFIG[matchType] || MATCH_TYPE_CONFIG[MATCH_TYPE.NONE];
+            return config.rowClassName;
+          }}
         />
         {/* 拖拽调整表格高度的手柄 */}
         <div

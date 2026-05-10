@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useCallback, useRef } from 'react';
-import { Card, Row, Col, Select, Checkbox, Button, Typography, Space, Tag, Alert, Divider } from 'antd';
-import { ArrowLeftOutlined, ArrowRightOutlined, SwapOutlined, HolderOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Select, Checkbox, Button, Typography, Space, Tag, Alert, Divider, InputNumber, Tooltip } from 'antd';
+import { ArrowLeftOutlined, ArrowRightOutlined, SwapOutlined, HolderOutlined, PlusOutlined, DeleteOutlined, UpOutlined, DownOutlined } from '@ant-design/icons';
+import { createDefaultMatchRule, LEVENSHTEIN_THRESHOLD_RANGE } from '../constants';
 
 const { Title, Text } = Typography;
 
@@ -15,9 +16,10 @@ const ColumnSelector = ({
   onSelectedColumnsChange,
   onBack,
   onNext,
-  canProceed
+  canProceed,
+  matchRules = [],
+  onMatchRulesChange = () => {},
 }) => {
-  // 检测可能匹配的列名
   const suggestedMatches = useMemo(() => {
     if (!fileA || !fileB) return [];
     
@@ -33,7 +35,6 @@ const ColumnSelector = ({
     return matches.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
   }, [fileA, fileB]);
 
-  // 简单的字符串相似度计算
   function calculateSimilarity(str1, str2) {
     const longer = str1.length > str2.length ? str1 : str2;
     const shorter = str1.length > str2.length ? str2 : str1;
@@ -76,7 +77,6 @@ const ColumnSelector = ({
     }
   };
 
-  // 所有可选列 = 仅文件A的列（B独有列不可选，避免破坏B原始数据）
   const allSelectableColumns = useMemo(() => {
     if (!fileA || !fileB) return [];
     return [...fileA.columns];
@@ -90,7 +90,6 @@ const ColumnSelector = ({
     }
   };
 
-  // ============ 拖拽选列支持 ============
   const [dragOverTarget, setDragOverTarget] = useState(null);
   const dragSourceCol = useRef(null);
 
@@ -125,23 +124,54 @@ const ColumnSelector = ({
     dragSourceCol.current = null;
   }, [selectedColumns, onSelectedColumnsChange, fileA]);
 
-  // 获取文件B中独有的列（不在文件A中）
   const uniqueColumnsB = useMemo(() => {
     if (!fileA || !fileB) return [];
     return fileB.columns.filter(col => !fileA.columns.includes(col));
   }, [fileA, fileB]);
 
-  // 获取文件A中独有的列（不在文件B中）
   const uniqueColumnsA = useMemo(() => {
     if (!fileA || !fileB) return [];
     return fileA.columns.filter(col => !fileB.columns.includes(col));
   }, [fileA, fileB]);
 
-  // 获取两个文件共有的列
   const commonColumns = useMemo(() => {
     if (!fileA || !fileB) return [];
     return fileA.columns.filter(col => fileB.columns.includes(col));
   }, [fileA, fileB]);
+
+  const handleAddRule = useCallback(() => {
+    const newRule = createDefaultMatchRule(keyColumnA, keyColumnB);
+    onMatchRulesChange([...matchRules, newRule]);
+  }, [keyColumnA, keyColumnB, matchRules, onMatchRulesChange]);
+
+  const handleRemoveRule = useCallback((ruleId) => {
+    onMatchRulesChange(matchRules.filter(r => r.id !== ruleId));
+  }, [matchRules, onMatchRulesChange]);
+
+  const handleUpdateRule = useCallback((ruleId, updates) => {
+    onMatchRulesChange(matchRules.map(r => r.id === ruleId ? { ...r, ...updates } : r));
+  }, [matchRules, onMatchRulesChange]);
+
+  const handleUpdateFuzzyConfig = useCallback((ruleId, configUpdates) => {
+    onMatchRulesChange(matchRules.map(r => {
+      if (r.id === ruleId) {
+        return { ...r, fuzzyConfig: { ...r.fuzzyConfig, ...configUpdates } };
+      }
+      return r;
+    }));
+  }, [matchRules, onMatchRulesChange]);
+
+  const handleMoveRule = useCallback((ruleId, direction) => {
+    const idx = matchRules.findIndex(r => r.id === ruleId);
+    if (idx < 0) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= matchRules.length) return;
+    const newRules = [...matchRules];
+    const temp = newRules[idx];
+    newRules[idx] = newRules[newIdx];
+    newRules[newIdx] = temp;
+    onMatchRulesChange(newRules);
+  }, [matchRules, onMatchRulesChange]);
 
   return (
     <div className="step-container">
@@ -367,6 +397,166 @@ const ColumnSelector = ({
                 </>
               )}
             </div>
+          </Card>
+
+          <Card
+            title={
+              <Space>
+                <span>匹配规则链</span>
+                <Tag color="purple">{matchRules.length} 条规则</Tag>
+              </Space>
+            }
+            extra={
+              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={handleAddRule}>
+                添加规则
+              </Button>
+            }
+            style={{ marginTop: '16px' }}
+          >
+            <Alert
+              message="匹配规则链说明"
+              description="按规则顺序依次执行匹配。前一条规则未匹配成功的行才进入下一条规则。每条规则可指定不同的主键列对和模糊匹配策略。无规则时仅使用上方主键列进行精确匹配。"
+              type="info"
+              style={{ marginBottom: '12px' }}
+            />
+
+            {matchRules.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                <Text type="secondary">暂无匹配规则，点击"添加规则"创建</Text>
+              </div>
+            )}
+
+            {matchRules.map((rule, ruleIndex) => (
+              <Card
+                key={rule.id}
+                size="small"
+                style={{
+                  marginBottom: '12px',
+                  borderLeft: `3px solid ${ruleIndex === 0 ? '#1890ff' : '#722ed1'}`,
+                }}
+                title={
+                  <Space>
+                    <Text strong>规则 {ruleIndex + 1}</Text>
+                    {ruleIndex === 0 && <Tag color="blue">首选</Tag>}
+                  </Space>
+                }
+                extra={
+                  <Space size={4}>
+                    <Tooltip title="上移">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<UpOutlined />}
+                        disabled={ruleIndex === 0}
+                        onClick={() => handleMoveRule(rule.id, -1)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="下移">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<DownOutlined />}
+                        disabled={ruleIndex === matchRules.length - 1}
+                        onClick={() => handleMoveRule(rule.id, 1)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="删除规则">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleRemoveRule(rule.id)}
+                      />
+                    </Tooltip>
+                  </Space>
+                }
+              >
+                <Row gutter={12} style={{ marginBottom: '8px' }}>
+                  <Col span={12}>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>文件A主键列</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      size="small"
+                      value={rule.keyColumnA || undefined}
+                      placeholder="选择列"
+                      onChange={(val) => handleUpdateRule(rule.id, { keyColumnA: val })}
+                    >
+                      {fileA?.columns.map(col => (
+                        <Select.Option key={col} value={col}>{col}</Select.Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  <Col span={12}>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>文件B主键列</Text>
+                    <Select
+                      style={{ width: '100%' }}
+                      size="small"
+                      value={rule.keyColumnB || undefined}
+                      placeholder="选择列"
+                      onChange={(val) => handleUpdateRule(rule.id, { keyColumnB: val })}
+                    >
+                      {fileB?.columns.map(col => (
+                        <Select.Option key={col} value={col}>{col}</Select.Option>
+                      ))}
+                    </Select>
+                  </Col>
+                </Row>
+
+                <Divider style={{ margin: '8px 0' }} />
+
+                <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginBottom: '8px' }}>
+                  模糊匹配策略（可同时启用多种，按优先级链式执行）
+                </Text>
+
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Checkbox
+                    checked={rule.fuzzyConfig.ignoreCase}
+                    onChange={(e) => handleUpdateFuzzyConfig(rule.id, { ignoreCase: e.target.checked })}
+                  >
+                    <Space>
+                      <Tag color="blue" style={{ fontSize: '10px' }}>优先级 1</Tag>
+                      忽略大小写
+                    </Space>
+                  </Checkbox>
+
+                  <Checkbox
+                    checked={rule.fuzzyConfig.ignoreSpacePunctuation}
+                    onChange={(e) => handleUpdateFuzzyConfig(rule.id, { ignoreSpacePunctuation: e.target.checked })}
+                  >
+                    <Space>
+                      <Tag color="purple" style={{ fontSize: '10px' }}>优先级 2</Tag>
+                      忽略空格与标点符号
+                    </Space>
+                  </Checkbox>
+
+                  <Space align="center">
+                    <Checkbox
+                      checked={rule.fuzzyConfig.levenshtein}
+                      onChange={(e) => handleUpdateFuzzyConfig(rule.id, { levenshtein: e.target.checked })}
+                    >
+                      <Space>
+                        <Tag color="orange" style={{ fontSize: '10px' }}>优先级 3</Tag>
+                        Levenshtein 编辑距离
+                      </Space>
+                    </Checkbox>
+                    {rule.fuzzyConfig.levenshtein && (
+                      <Space size={4}>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>阈值：</Text>
+                        <InputNumber
+                          size="small"
+                          min={LEVENSHTEIN_THRESHOLD_RANGE.min}
+                          max={LEVENSHTEIN_THRESHOLD_RANGE.max}
+                          value={rule.fuzzyConfig.levenshteinThreshold}
+                          onChange={(val) => handleUpdateFuzzyConfig(rule.id, { levenshteinThreshold: val })}
+                          style={{ width: 60 }}
+                        />
+                      </Space>
+                    )}
+                  </Space>
+                </Space>
+              </Card>
+            ))}
           </Card>
         </Col>
       </Row>

@@ -7,7 +7,7 @@
 //
 import { APP_CONFIG, PROCESS_STATUS, ANOMALY_CONFIG } from '../constants';
 import logger from './logger';
-import { buildKeyMap, matchRow, createStats, finalizeStats } from './matchCore';
+import { buildKeyMap, buildCandidateList, matchRow, matchRowWithRule, matchRowWithRuleChain, createStats, finalizeStats } from './matchCore';
 import _ from 'lodash';
 
 /**
@@ -191,7 +191,7 @@ export class DataProcessor {
    * 执行数据处理 (支持断点续处理)
    */
   async process(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, options = {}) {
-    const { resume = false, timeout = APP_CONFIG.PROCESS_TIMEOUT } = options;
+    const { resume = false, timeout = APP_CONFIG.PROCESS_TIMEOUT, matchRules = null } = options;
     
     this._updateStatus(PROCESS_STATUS.PROCESSING);
     this.abortController = new AbortController();
@@ -204,8 +204,27 @@ export class DataProcessor {
 
     const stats = createStats(fileBData.length);
 
-    // 使用共享核心构建文件A的索引映射
-    const fileAMap = buildKeyMap(fileAData, keyColumnA);
+    let ruleContexts = null;
+
+    if (matchRules && matchRules.length > 0) {
+      ruleContexts = matchRules.map(rule => ({
+        fileAMap: buildKeyMap(fileAData, rule.keyColumnA || keyColumnA),
+        candidates: buildCandidateList(fileAData, rule.keyColumnA || keyColumnA),
+        rule,
+      }));
+    } else {
+      const fileAMap = buildKeyMap(fileAData, keyColumnA);
+      const candidates = buildCandidateList(fileAData, keyColumnA);
+      ruleContexts = [{
+        fileAMap,
+        candidates,
+        rule: {
+          keyColumnA,
+          keyColumnB,
+          fuzzyConfig: { ignoreCase: false, ignoreSpacePunctuation: false, levenshtein: false, levenshteinThreshold: 1 },
+        },
+      }];
+    }
 
     // 确定起始位置
     let startIndex = 0;
@@ -240,7 +259,7 @@ export class DataProcessor {
           break;
         }
 
-        const newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
+        const newRow = matchRowWithRuleChain(fileBData[i], i, ruleContexts, selectedColumns, stats);
 
         this.resultData.push(newRow);
         this.processedCount = i + 1;
