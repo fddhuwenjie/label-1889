@@ -17,7 +17,7 @@ import ProcessingStatus from './components/ProcessingStatus';
 import HelpGuide from './components/HelpGuide';
 import logger from './utils/logger';
 import configManager from './utils/configManager';
-import { PROCESS_STATUS } from './constants';
+import { PROCESS_STATUS, createDefaultMatchRule } from './constants';
 import { CLEANING_OPERATIONS, FILL_NULLS_MODES } from './utils/dataCleaner';
 import DataCleaner from './utils/dataCleaner';
 import { v4 as uuidv4 } from 'uuid';
@@ -56,6 +56,7 @@ function App() {
   const [appInfo, setAppInfo] = useState(null);
   const [hasCheckpoint, setHasCheckpoint] = useState(false);
   const [anomalies, setAnomalies] = useState([]);
+  const [matchRules, setMatchRules] = useState([]);
 
   // 根据文件路径生成确定性 sessionId（跨重启可复现）
   const deriveSessionId = useCallback((fileAPath, fileBPath) => {
@@ -233,6 +234,7 @@ function App() {
         selectedColumns,
         sessionId: currentSessionId,
         resume,
+        matchRules: matchRules.length > 0 ? matchRules : null,
       });
 
       if (result.success) {
@@ -388,6 +390,7 @@ function App() {
     setProcessStatus(PROCESS_STATUS.IDLE);
     setHasCheckpoint(false);
     setAnomalies([]);
+    setMatchRules([]);
     logger.info('应用已重置', { sessionId });
   };
 
@@ -505,6 +508,8 @@ function App() {
             onBack={() => setCurrentStep(1)}
             onNext={() => setCurrentStep(3)}
             canProceed={canProceedToStep4}
+            matchRules={matchRules}
+            onMatchRulesChange={setMatchRules}
           />
         )}
 
