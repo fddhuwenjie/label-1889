@@ -7,7 +7,7 @@
 //
 import { APP_CONFIG, PROCESS_STATUS, ANOMALY_CONFIG } from '../constants';
 import logger from './logger';
-import { buildKeyMap, matchRow, createStats, finalizeStats } from './matchCore';
+import { buildKeyMap, matchRow, createStats, finalizeStats, executeMatchRuleChain } from './matchCore';
 import _ from 'lodash';
 
 /**
@@ -191,7 +191,12 @@ export class DataProcessor {
    * 执行数据处理 (支持断点续处理)
    */
   async process(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, options = {}) {
-    const { resume = false, timeout = APP_CONFIG.PROCESS_TIMEOUT } = options;
+    const { 
+      resume = false, 
+      timeout = APP_CONFIG.PROCESS_TIMEOUT,
+      useMatchRuleChain = false,
+      matchRules = []
+    } = options;
     
     this._updateStatus(PROCESS_STATUS.PROCESSING);
     this.abortController = new AbortController();
@@ -204,10 +209,35 @@ export class DataProcessor {
 
     const stats = createStats(fileBData.length);
 
-    // 使用共享核心构建文件A的索引映射
+    if (useMatchRuleChain && matchRules.length > 0) {
+      this.resultData = executeMatchRuleChain(fileBData, fileAData, matchRules, selectedColumns, stats);
+      finalizeStats(stats);
+      this._updateStatus(PROCESS_STATUS.COMPLETED);
+      
+      if (this.onProgress) {
+        this.onProgress({
+          current: fileBData.length,
+          total: fileBData.length,
+          percentage: 100,
+        });
+      }
+      
+      logger.info('数据处理完成（规则链模式）', { 
+        sessionId: this.sessionId, 
+        stats 
+      });
+
+      return {
+        success: true,
+        resultData: this.resultData,
+        stats,
+        columns: [...new Set([...Object.keys(fileBData[0] || {}), ...selectedColumns])],
+        isPaused: false,
+      };
+    }
+
     const fileAMap = buildKeyMap(fileAData, keyColumnA);
 
-    // 确定起始位置
     let startIndex = 0;
     if (resume && this.checkpoint) {
       startIndex = this.checkpoint.processedCount;
@@ -218,7 +248,6 @@ export class DataProcessor {
       this.processedCount = 0;
     }
 
-    // 设置超时
     const timeoutId = setTimeout(() => {
       if (this.status === PROCESS_STATUS.PROCESSING) {
         logger.warn('处理超时', { sessionId: this.sessionId, timeout });
@@ -228,13 +257,11 @@ export class DataProcessor {
 
     try {
       for (let i = startIndex; i < fileBData.length; i++) {
-        // 检查是否被中止
         if (this.abortController.signal.aborted) {
           logger.info('处理被中止', { sessionId: this.sessionId, processedCount: i });
           break;
         }
 
-        // 检查是否暂停
         if (this.status === PROCESS_STATUS.PAUSED) {
           this._saveCheckpoint();
           break;
@@ -245,12 +272,10 @@ export class DataProcessor {
         this.resultData.push(newRow);
         this.processedCount = i + 1;
 
-        // 定期保存检查点
         if ((i + 1) % APP_CONFIG.CHECKPOINT_INTERVAL === 0) {
           this._saveCheckpoint();
         }
 
-        // 报告进度
         if (this.onProgress && (i + 1) % 100 === 0) {
           this.onProgress({
             current: i + 1,
@@ -285,12 +310,11 @@ export class DataProcessor {
       clearTimeout(timeoutId);
       logger.error('数据处理失败', error, { sessionId: this.sessionId });
       
-      // 失败自动回滚到初始状态
       this.rollback();
       const autoRolledBack = true;
       
       this._updateStatus(PROCESS_STATUS.ERROR);
-      this._saveCheckpoint(); // 保存检查点以便恢复
+      this._saveCheckpoint();
       
       return {
         success: false,

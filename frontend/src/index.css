@@ -59,6 +59,30 @@ body {
   background-color: #fff2f0;
 }
 
+.exact-match-row {
+  background-color: #f6ffed !important;
+}
+
+.exact-match-row:hover > td {
+  background-color: #e6ffd9 !important;
+}
+
+.fuzzy-match-row {
+  background-color: #fff7e6 !important;
+}
+
+.fuzzy-match-row:hover > td {
+  background-color: #ffefd6 !important;
+}
+
+.unmatched-row {
+  background-color: #fafafa !important;
+}
+
+.unmatched-row:hover > td {
+  background-color: #f0f0f0 !important;
+}
+
 /* 拖拽区域样式 */
 .upload-dragger {
   border: 2px dashed #d9d9d9;

@@ -12,13 +12,14 @@ import {
   CloseCircleOutlined,
   FileExcelOutlined,
   SearchOutlined,
-  CloseOutlined
+  CloseOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 import { Resizable } from 'react-resizable';
+import { MATCH_TYPES, MATCH_COLORS } from '../constants';
 
 const { Title, Text } = Typography;
 
-// 可调整宽度的表头单元格
 const ResizableTitle = (props) => {
   const { onResize, width, ...restProps } = props;
 
@@ -47,19 +48,14 @@ const ResizableTitle = (props) => {
 const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, onRollback }) => {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  // 多列筛选: { columnName: searchText, ... }
   const [columnFilters, setColumnFilters] = useState({});
-  // 多列排序: [{ field, order }, ...]
   const [sortInfoList, setSortInfoList] = useState([]);
-  // 列宽状态
   const [columnWidths, setColumnWidths] = useState({});
-  // 表格高度（可拖拽调整）
   const [tableHeight, setTableHeight] = useState(400);
   const isDragging = React.useRef(false);
   const startY = React.useRef(0);
   const startHeight = React.useRef(400);
 
-  // 表格高度拖拽调整
   const handleDragStart = useCallback((e) => {
     isDragging.current = true;
     startY.current = e.clientY;
@@ -85,7 +81,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     document.addEventListener('mouseup', handleDragEnd);
   }, [tableHeight]);
 
-  // 更新某列的筛选值
   const updateFilter = useCallback((col, value) => {
     setColumnFilters(prev => {
       const next = { ...prev };
@@ -99,7 +94,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     setCurrentPage(1);
   }, []);
 
-  // 移除某列的筛选
   const removeFilter = useCallback((col) => {
     setColumnFilters(prev => {
       const next = { ...prev };
@@ -108,11 +102,9 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     });
   }, []);
 
-  // 多列筛选 + 多列排序
   const processedData = useMemo(() => {
     let result = [...data];
 
-    // 应用所有列的筛选条件
     Object.entries(columnFilters).forEach(([col, text]) => {
       if (text) {
         result = result.filter(row =>
@@ -121,7 +113,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
       }
     });
 
-    // 多列排序
     if (sortInfoList.length > 0) {
       result.sort((a, b) => {
         for (const { field, order } of sortInfoList) {
@@ -139,12 +130,10 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     return result;
   }, [data, columnFilters, sortInfoList]);
 
-  // 列宽调整回调
   const handleResize = useCallback((col) => (_, { size }) => {
     setColumnWidths(prev => ({ ...prev, [col]: size.width }));
   }, []);
 
-  // 生成表格列配置（带可调整宽度）
   const tableColumns = useMemo(() => {
     return columns.map(col => ({
       title: (
@@ -174,7 +163,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
           className = 'null-cell';
         }
 
-        // 防御性处理：如果值是对象（如 Date 或 cell 对象），提取可显示的文本
         let displayValue;
         if (isNull) {
           displayValue = <Text type="secondary" italic>NULL</Text>;
@@ -199,7 +187,43 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     }));
   }, [columns, selectedColumns, columnWidths, handleResize]);
 
-  // 添加行号和匹配状态列
+  const getMatchTypeTag = (record) => {
+    const matchType = record._matchType;
+    if (matchType === MATCH_TYPES.EXACT) {
+      return (
+        <Tag color="success" icon={<CheckCircleOutlined />}>
+          精确匹配
+        </Tag>
+      );
+    } else if (matchType === MATCH_TYPES.FUZZY) {
+      return (
+        <Tag color="orange">
+          模糊匹配
+          {record._matchDistance !== undefined && record._matchDistance > 0 && (
+            <span style={{ marginLeft: 4 }}>(距离: {record._matchDistance})</span>
+          )}
+        </Tag>
+      );
+    } else {
+      return (
+        <Tag color="default" icon={<CloseCircleOutlined />}>
+          未匹配
+        </Tag>
+      );
+    }
+  };
+
+  const getRowClassName = (record) => {
+    const matchType = record._matchType;
+    if (matchType === MATCH_TYPES.EXACT) {
+      return 'exact-match-row';
+    } else if (matchType === MATCH_TYPES.FUZZY) {
+      return 'fuzzy-match-row';
+    } else {
+      return 'unmatched-row';
+    }
+  };
+
   const allColumns = [
     {
       title: '#',
@@ -210,19 +234,18 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
       render: (value) => value + 1
     },
     {
-      title: '匹配',
-      dataIndex: '_matched',
-      key: '_matched',
-      width: 80,
+      title: '匹配状态',
+      dataIndex: '_matchType',
+      key: '_matchType',
+      width: 140,
       fixed: 'left',
       filters: [
-        { text: '已匹配', value: true },
-        { text: '未匹配', value: false }
+        { text: '精确匹配', value: MATCH_TYPES.EXACT },
+        { text: '模糊匹配', value: MATCH_TYPES.FUZZY },
+        { text: '未匹配', value: MATCH_TYPES.UNMATCHED }
       ],
-      onFilter: (value, record) => record._matched === value,
-      render: (matched) => matched 
-        ? <Tag color="success" icon={<CheckCircleOutlined />}>是</Tag>
-        : <Tag color="error" icon={<CloseCircleOutlined />}>否</Tag>
+      onFilter: (value, record) => record._matchType === value,
+      render: (_, record) => getMatchTypeTag(record)
     },
     ...tableColumns
   ];
@@ -231,7 +254,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     setCurrentPage(pagination.current);
     setPageSize(pagination.pageSize);
 
-    // 处理多列排序（AntD 多列 sorter 返回数组）
     if (Array.isArray(sorter)) {
       setSortInfoList(
         sorter
@@ -258,7 +280,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
     }
   ];
 
-  // 当前活跃的筛选列
   const activeFilterCols = Object.keys(columnFilters);
 
   return (
@@ -267,7 +288,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
         步骤 4: 预览与保存
       </Title>
 
-      {/* 统计信息 */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
         <Col span={6}>
           <Card className="stat-card info">
@@ -279,36 +299,56 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="stat-card success">
+          <Card style={{ background: MATCH_COLORS[MATCH_TYPES.EXACT], borderRadius: '8px' }}>
             <Statistic 
-              title={<span style={{ color: '#fff' }}>匹配成功</span>}
-              value={stats?.matchedRows || 0}
-              suffix={`(${stats?.matchRate || 0}%)`}
+              title={<span style={{ color: '#fff' }}>精确匹配</span>}
+              value={stats?.exactMatches || 0}
+              suffix={`(${stats?.exactMatchRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
         <Col span={6}>
-          <Card className="stat-card warning">
+          <Card style={{ background: MATCH_COLORS[MATCH_TYPES.FUZZY], borderRadius: '8px' }}>
+            <Statistic 
+              title={<span style={{ color: '#fff' }}>模糊匹配</span>}
+              value={stats?.fuzzyMatches || 0}
+              suffix={`(${stats?.fuzzyMatchRate || 0}%)`}
+              valueStyle={{ color: '#fff' }}
+            />
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card style={{ background: MATCH_COLORS[MATCH_TYPES.UNMATCHED], borderRadius: '8px' }}>
             <Statistic 
               title={<span style={{ color: '#fff' }}>未匹配</span>}
               value={stats?.unmatchedRows || 0}
-              valueStyle={{ color: '#fff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card className="stat-card">
-            <Statistic 
-              title={<span style={{ color: '#fff' }}>补充单元格</span>}
-              value={stats?.filledCells || 0}
+              suffix={`(${stats?.unmatchedRate || 0}%)`}
               valueStyle={{ color: '#fff' }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* 多列筛选区域 */}
+      <Row gutter={16} style={{ marginBottom: '16px' }}>
+        <Col span={12}>
+          <Card size="small">
+            <Space>
+              <Tag color="success">绿色行</Tag>
+              <Text type="secondary">精确匹配 - 主键完全一致</Text>
+            </Space>
+          </Card>
+        </Col>
+        <Col span={12}>
+          <Card size="small">
+            <Space>
+              <Tag color="orange">橙色行</Tag>
+              <Text type="secondary">模糊匹配 - 通过模糊策略匹配成功</Text>
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+
       <Card style={{ marginBottom: '16px' }}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Space wrap>
@@ -338,7 +378,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
             </Text>
           </Space>
 
-          {/* 已添加的筛选条件 */}
           {activeFilterCols.length > 0 && (
             <Space wrap>
               {activeFilterCols.map(col => (
@@ -366,7 +405,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
         </Space>
       </Card>
 
-      {/* 数据表格 */}
       <Card 
         title="数据预览"
         extra={
@@ -404,9 +442,8 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
           onChange={handleTableChange}
           scroll={{ x: 'max-content', y: tableHeight }}
           size="small"
-          rowClassName={(record) => record._matched ? 'matched-row' : 'unmatched-row'}
+          rowClassName={getRowClassName}
         />
-        {/* 拖拽调整表格高度的手柄 */}
         <div
           onMouseDown={handleDragStart}
           style={{
@@ -428,7 +465,6 @@ const DataPreview = ({ data, columns, stats, selectedColumns, onSave, onReset, o
         </div>
       </Card>
 
-      {/* 操作按钮 */}
       <Alert
         message="导出格式说明"
         description="保存为 Excel 格式时，系统仅更新补充列的单元格值(cell.v)，严格保留文件B原始的数据类型、数字格式、样式等所有属性。保存为 CSV 格式为纯文本导出，无法保留原始数据类型、格式设置和样式属性。如需严格保持文件B原始格式，请选择 Excel 导出。"

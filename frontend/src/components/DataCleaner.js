@@ -615,7 +615,7 @@ const DataCleanerComponent = ({
           ) : (
             <Alert
               message="暂无预览数据"
-              description="请先选择清洗操作，然后点击\"预览清洗效果\"按钮"
+              description='请先选择清洗操作，然后点击"预览清洗效果"按钮'
               type="info"
               showIcon
             />

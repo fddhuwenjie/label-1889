@@ -17,7 +17,7 @@ import ProcessingStatus from './components/ProcessingStatus';
 import HelpGuide from './components/HelpGuide';
 import logger from './utils/logger';
 import configManager from './utils/configManager';
-import { PROCESS_STATUS } from './constants';
+import { PROCESS_STATUS, createDefaultMatchRule } from './constants';
 import { CLEANING_OPERATIONS, FILL_NULLS_MODES } from './utils/dataCleaner';
 import DataCleaner from './utils/dataCleaner';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,6 +45,8 @@ function App() {
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [keyColumnA, setKeyColumnA] = useState('');
   const [keyColumnB, setKeyColumnB] = useState('');
+  const [useMatchRuleChain, setUseMatchRuleChain] = useState(false);
+  const [matchRules, setMatchRules] = useState([createDefaultMatchRule(1)]);
   const [resultData, setResultData] = useState(null);
   const [resultColumns, setResultColumns] = useState([]);
   const [stats, setStats] = useState(null);
@@ -233,6 +235,8 @@ function App() {
         selectedColumns,
         sessionId: currentSessionId,
         resume,
+        useMatchRuleChain,
+        matchRules,
       });
 
       if (result.success) {
@@ -499,9 +503,13 @@ function App() {
             keyColumnA={keyColumnA}
             keyColumnB={keyColumnB}
             selectedColumns={selectedColumns}
+            matchRules={matchRules}
+            useMatchRuleChain={useMatchRuleChain}
             onKeyColumnAChange={setKeyColumnA}
             onKeyColumnBChange={setKeyColumnB}
             onSelectedColumnsChange={setSelectedColumns}
+            onMatchRulesChange={setMatchRules}
+            onUseMatchRuleChainChange={setUseMatchRuleChain}
             onBack={() => setCurrentStep(1)}
             onNext={() => setCurrentStep(3)}
             canProceed={canProceedToStep4}
