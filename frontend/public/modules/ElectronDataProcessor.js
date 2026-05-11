@@ -7,7 +7,7 @@ const csvParser = require('csv-parser');
 const { createReadStream } = require('fs');
 const ProgressBar = require('progress');
 const _ = require('lodash');
-const { buildKeyMap, matchRow, createStats, finalizeStats } = require('./matchCore');
+const { buildKeyMap, matchRow, createStats, finalizeStats, executeMatchRuleChain } = require('./matchCore');
 
 const DATA_LIMITS = {
   MAX_ROWS: 100000,
@@ -191,7 +191,8 @@ class ElectronDataProcessor {
   async process(params, onProgress) {
     const { 
       fileAPath, fileBPath, keyColumnA, keyColumnB, 
-      selectedColumns, sessionId, resume = false 
+      selectedColumns, sessionId, resume = false,
+      useMatchRuleChain = false, matchRules = []
     } = params;
 
     this.currentSession = sessionId;
@@ -222,7 +223,9 @@ class ElectronDataProcessor {
         selectedColumns,
         fileA.columns,
         checkpoint,
-        onProgress
+        onProgress,
+        useMatchRuleChain,
+        matchRules
       );
 
       // 如果是暂停导致的中断，保存检查点并返回
@@ -287,11 +290,8 @@ class ElectronDataProcessor {
   }
 
   // ============ 数据匹配核心（使用共享 matchCore） ============
-  async matchData(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, fileAColumns, checkpoint, onProgress) {
+  async matchData(fileAData, fileBData, keyColumnA, keyColumnB, selectedColumns, fileAColumns, checkpoint, onProgress, useMatchRuleChain = false, matchRules = []) {
     const stats = createStats(fileBData.length);
-
-    // 使用共享核心构建文件A索引映射
-    const fileAMap = buildKeyMap(fileAData, keyColumnA);
 
     let startIndex = 0;
     let resultData = [];
@@ -302,10 +302,29 @@ class ElectronDataProcessor {
       Object.assign(stats, {
         matchedRows: checkpoint.stats?.matchedRows || 0,
         unmatchedRows: checkpoint.stats?.unmatchedRows || 0,
+        exactMatches: checkpoint.stats?.exactMatches || 0,
+        fuzzyMatches: checkpoint.stats?.fuzzyMatches || 0,
         filledCells: checkpoint.stats?.filledCells || 0,
         nullCells: checkpoint.stats?.nullCells || 0,
       });
     }
+
+    if (useMatchRuleChain && matchRules.length > 0) {
+      const resultData = executeMatchRuleChain(fileBData, fileAData, matchRules, selectedColumns, stats);
+      finalizeStats(stats);
+      
+      if (onProgress) {
+        onProgress({
+          current: fileBData.length,
+          total: fileBData.length,
+          percentage: 100,
+        });
+      }
+      
+      return { resultData, stats };
+    }
+
+    const fileAMap = buildKeyMap(fileAData, keyColumnA);
 
     const timeoutAt = Date.now() + this.config.PROCESS_TIMEOUT;
     const progressInterval = Math.max(1, Math.min(50, Math.floor(fileBData.length / 100)));
@@ -327,7 +346,6 @@ class ElectronDataProcessor {
         throw new Error('处理超时，请尝试断点续处理');
       }
 
-      // 使用共享核心匹配单行
       const newRow = matchRow(fileBData[i], i, fileAMap, keyColumnB, selectedColumns, stats);
       resultData.push(newRow);
 

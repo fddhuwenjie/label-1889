@@ -64,3 +64,53 @@ export const ANOMALY_CONFIG = {
   // 数据类型不一致警告
   TYPE_MISMATCH_WARNING: true,
 };
+
+// 匹配类型枚举
+export const MATCH_TYPES = {
+  EXACT: 'exact',
+  FUZZY: 'fuzzy',
+  UNMATCHED: 'unmatched',
+};
+
+// 模糊匹配策略枚举
+export const FUZZY_STRATEGIES = {
+  IGNORE_CASE: 'ignoreCase',
+  IGNORE_SPACE_PUNCT: 'ignoreSpacePunct',
+  LEVENSHTEIN: 'levenshtein',
+};
+
+// 匹配规则链 Schema - 定义单条匹配规则的数据结构
+export const MATCH_RULE_SCHEMA = {
+  id: '',
+  name: '',
+  keyColumnA: '',
+  keyColumnB: '',
+  strategies: {
+    [FUZZY_STRATEGIES.IGNORE_CASE]: false,
+    [FUZZY_STRATEGIES.IGNORE_SPACE_PUNCT]: false,
+    [FUZZY_STRATEGIES.LEVENSHTEIN]: false,
+  },
+  levenshteinThreshold: 1,
+  enabled: true,
+};
+
+// 创建默认匹配规则的工厂函数
+export const createDefaultMatchRule = (id = 1) => ({
+  ...MATCH_RULE_SCHEMA,
+  id,
+  name: `规则 ${id}`,
+  strategies: {
+    [FUZZY_STRATEGIES.IGNORE_CASE]: false,
+    [FUZZY_STRATEGIES.IGNORE_SPACE_PUNCT]: false,
+    [FUZZY_STRATEGIES.LEVENSHTEIN]: false,
+  },
+  levenshteinThreshold: 1,
+  enabled: true,
+});
+
+// 匹配结果颜色配置
+export const MATCH_COLORS = {
+  [MATCH_TYPES.EXACT]: '#52c41a',
+  [MATCH_TYPES.FUZZY]: '#fa8c16',
+  [MATCH_TYPES.UNMATCHED]: '#8c8c8c',
+};
